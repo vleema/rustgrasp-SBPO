@@ -26,3 +26,7 @@ _minted/
 # R
 .RData
 .Rhistory
+
+# env
+.envrc
+.direnv
