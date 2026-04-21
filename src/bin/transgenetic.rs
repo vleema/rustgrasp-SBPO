@@ -5,7 +5,7 @@ use std::{array, cmp::Ordering, time::Instant};
 use csv_macro::graph_from_csv;
 use rand::{Rng, rngs::ThreadRng, seq::SliceRandom};
 
-graph_from_csv!("data/006/data.csv");
+graph_from_csv!("data/001/data.csv");
 
 /// A metric for representing the quality of a solution to the TSP problem.
 type Fit = f64;
@@ -72,7 +72,7 @@ impl Plasmid {
     fn new(gu: GeneticUnit) -> Self {
         let mut rng = rand::rng();
         let mut seq = vec![];
-        let depth = 3;
+        let depth = rng.random_range(3..(g.len() / 6).max(4));
 
         while seq.len() < depth {
             seq.clear();
