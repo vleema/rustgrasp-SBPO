@@ -36,11 +36,24 @@ impl Symbionts {
         Self(p)
     }
 
-    fn evolve(&mut self, rng: &mut ThreadRng, tv: &[DynTransgeneticVector]) -> &[Chromosome] {
+    fn evolve(&mut self, rng: &mut ThreadRng, tv: &[DynTransgeneticVector], current_it: usize, total_it: usize) -> &[Chromosome] {
         // TODO: Improve subpopulation selection.
+        let plasmid_probability = 1.0 - (current_it as f64 / total_it as f64); // Decrease plasmid probability over time.
+        // let plasmid_probability = current_it as f64 / total_it as f64; // Increase plasmid probability over time.
         let subpop = &mut self.0[..];
         for p in &mut *subpop {
-            let agent = &tv[rng.random_range(0..tv.len())];
+            let wants_plasmid = rng.random_bool(plasmid_probability);
+            let candidates: Vec<&DynTransgeneticVector> = tv.iter().filter(|agent| {
+                let is_plasmid = matches!(agent, DynTransgeneticVector::Plasmid(_));
+                is_plasmid == wants_plasmid
+            }).collect();
+
+            let agent = if candidates.is_empty() {
+                &tv[rng.random_range(0..tv.len())]
+            } else {
+                candidates[rng.random_range(0..candidates.len())]
+            };
+
             if let Some(manipulated) = agent.transcribed(p) {
                 *p = manipulated;
             }
@@ -159,32 +172,100 @@ impl TransgeneticVector for Plasmid {
     }
 }
 
+struct JumpAndSwapTransposon {
+    k: usize
+}
+
+impl JumpAndSwapTransposon {
+    fn new(k: usize) -> Self {
+        Self { k }
+    }
+}
+
+impl TransgeneticVector for JumpAndSwapTransposon {
+    fn attack(&self, original: &Chromosome, modified: &Chromosome) -> bool {
+        fit(original) - fit(modified) > 0.
+    }
+
+    fn transcribe(&self, c: &Chromosome) -> Chromosome {
+        let (start, end) = match self.identify(c) {
+            Some(range) => range,
+            None => return c.clone(),
+        };
+        let mut best_chromosome = c.clone();
+        let mut best_fitness = f64::MAX;
+        for i in start..end {
+            let mut candidate = c.clone();
+            
+            candidate.swap(i, i + 1);
+
+            let current_fitness = fit(&candidate);
+
+            if current_fitness < best_fitness {
+                best_fitness = current_fitness;
+                best_chromosome = candidate;
+            }
+        }
+
+        best_chromosome
+    }
+
+    fn block(&self, _: &Chromosome, _: usize) {}
+
+    fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
+        let c_len = c.len();
+        if c_len <= self.k {
+            return None;
+        } 
+        let mut rng = rand::rng();
+        let mut start = rng.random_range(0..c_len);
+        let mut end = rng.random_range(0..c_len);
+        
+        while start.abs_diff(end) < self.k {
+            start = rng.random_range(0..c_len);
+            end = rng.random_range(0..c_len);
+        }
+
+        if start > end {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        Some((start, end))
+
+    }
+}
+
 enum DynTransgeneticVector {
     Plasmid(Plasmid),
+    JumpAndSwapTransposon(JumpAndSwapTransposon),
 }
 
 impl TransgeneticVector for DynTransgeneticVector {
     fn attack(&self, original: &Chromosome, modified: &Chromosome) -> bool {
         match self {
             Self::Plasmid(p) => p.attack(original, modified),
+            Self::JumpAndSwapTransposon(t) => t.attack(original, modified),
         }
     }
 
     fn transcribe(&self, c: &Chromosome) -> Chromosome {
         match self {
             Self::Plasmid(p) => p.transcribe(c),
+            Self::JumpAndSwapTransposon(t) => t.transcribe(c),
         }
     }
 
     fn block(&self, c: &Chromosome, it: usize) {
         match self {
             Self::Plasmid(p) => p.block(c, it),
+            Self::JumpAndSwapTransposon(t) => t.block(c, it),
         }
     }
 
     fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
         match self {
             Self::Plasmid(p) => p.identify(c),
+            Self::JumpAndSwapTransposon(t) => t.identify(c),
         }
     }
 }
@@ -214,7 +295,14 @@ impl Agents {
 
     fn new_agent(gu: GeneticUnit) -> DynTransgeneticVector {
         // TODO: Make the agent to be randomly selected.
-        DynTransgeneticVector::Plasmid(Plasmid::new(gu))
+        // DynTransgeneticVector::Plasmid(Plasmid::new(gu))
+        let mut rng = rand::rng();
+        if rng.random_bool(0.5) {
+            DynTransgeneticVector::Plasmid(Plasmid::new(gu))
+        } else {
+            let k = rng.random_range(3..(NODE_COUNT / 4).max(4));
+            DynTransgeneticVector::JumpAndSwapTransposon(JumpAndSwapTransposon::new(k))
+        }
     }
 }
 
@@ -237,8 +325,8 @@ impl Cell {
         }
     }
 
-    fn evolve(&mut self, rng: &mut ThreadRng) {
-        let subpop = self.symbionts.evolve(rng, &self.agents.0);
+    fn evolve(&mut self, rng: &mut ThreadRng, current_it: usize, total_it: usize) {
+        let subpop = self.symbionts.evolve(rng, &self.agents.0, current_it, total_it);
 
         let mut aposteriori = subpop
             .iter()
@@ -329,8 +417,8 @@ fn main() {
 
     let mut cell = Cell::new(&mut rng, psize, asize);
 
-    for _ in 0..itnum {
-        cell.evolve(&mut rng);
+    for current_it in 0..itnum {
+        cell.evolve(&mut rng, current_it, itnum);
     }
 
     // TODO: Extract this into func.
