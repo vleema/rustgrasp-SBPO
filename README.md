@@ -12,6 +12,15 @@
 - [Graphviz](https://www.graphviz.org/download/): Para converter os arquivos
   `.dot` em imagens `.png`
 
+#### Nix
+
+Se você possuí nix, basta executar o seguinte comando para sincronizar as
+dependências:
+
+```terminal
+nix develop
+```
+
 ### Compilação e testes
 
 É possível fazer isso via cargo ou Makefile.
