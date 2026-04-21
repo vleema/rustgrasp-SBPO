@@ -33,7 +33,7 @@ jobs:
         run: rustup toolchain install stable --profile minimal -c rustfmt,clippy
 
       - name: Build
-        run: make build
+        run: make build-test
 
       - name: Run tests
         run: make test

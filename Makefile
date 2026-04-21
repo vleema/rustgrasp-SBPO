@@ -3,17 +3,22 @@ export RUSTC_BOOTSTRAP=1
 
 all: build
 
-build: ## Builds the program with release mode
+run: build ## Runs a given algorithm with a given instance and params, e.g. `make run-instance INSTANCE=1 ALGO=transgenetic PARAMS="100 50 42"`
+	cargo br --bin $(ALGO)
+	cargo rr --bin $(ALGO) -- $(PARAMS)
+
+build: ## Builds a given algorithm with release mode and a given instance, e.g. `make build ALGO=genetic INSTANCE=001`
+	sed -i "s|\(graph_from_csv!(\"\)[^\"]*\(\")\)|\1data/$(INSTANCE)/data.csv\2|" src/bin/$(ALGO).rs
+	cargo br --bin $(ALGO)
+
+build-test: ## Builds the cargo project
 	cargo br
 
 check: ## Performs a cargo check with release mode
 	cargo cr
 
-example: ## Runs a given a example e.g. `make example AGRS=example1`
-	cargo er $(ARGS)
-
-clean: ## Cleans cargo generated artifacts
-	cargo clean
+clean: ## Cleans the generated artifact
+	rm -r bins/* && cargo clean
 
 clippy: ## Runs clippy
 	unset RUSTC_BOOTSTRAP && cargo clippy --workspace -- -D warnings
@@ -21,9 +26,6 @@ clippy: ## Runs clippy
 
 test: ## Runs all tests
 	unset RUSTC_BOOTSTRAP && cargo tr --all
-
-run: ## Runs main in release mode
-	cargo rr
 
 fmt: ## Formats the code
 	cargo fmt
