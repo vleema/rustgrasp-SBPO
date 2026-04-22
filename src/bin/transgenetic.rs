@@ -36,17 +36,26 @@ impl Symbionts {
         Self(p)
     }
 
-    fn evolve(&mut self, rng: &mut ThreadRng, tv: &[DynTransgeneticVector], current_it: usize, total_it: usize) -> &[Chromosome] {
+    fn evolve(
+        &mut self,
+        rng: &mut ThreadRng,
+        tv: &[DynTransgeneticVector],
+        current_it: usize,
+        total_it: usize,
+    ) -> &[Chromosome] {
         // TODO: Improve subpopulation selection.
         let plasmid_probability = 1.0 - (current_it as f64 / total_it as f64); // Decrease plasmid probability over time.
         // let plasmid_probability = current_it as f64 / total_it as f64; // Increase plasmid probability over time.
         let subpop = &mut self.0[..];
         for p in &mut *subpop {
             let wants_plasmid = rng.random_bool(plasmid_probability);
-            let candidates: Vec<&DynTransgeneticVector> = tv.iter().filter(|agent| {
-                let is_plasmid = matches!(agent, DynTransgeneticVector::Plasmid(_));
-                is_plasmid == wants_plasmid
-            }).collect();
+            let candidates: Vec<&DynTransgeneticVector> = tv
+                .iter()
+                .filter(|agent| {
+                    let is_plasmid = matches!(agent, DynTransgeneticVector::Plasmid(_));
+                    is_plasmid == wants_plasmid
+                })
+                .collect();
 
             let agent = if candidates.is_empty() {
                 &tv[rng.random_range(0..tv.len())]
@@ -173,7 +182,7 @@ impl TransgeneticVector for Plasmid {
 }
 
 struct JumpAndSwapTransposon {
-    k: usize
+    k: usize,
 }
 
 impl JumpAndSwapTransposon {
@@ -190,13 +199,13 @@ impl TransgeneticVector for JumpAndSwapTransposon {
     fn transcribe(&self, c: &Chromosome) -> Chromosome {
         let (start, end) = match self.identify(c) {
             Some(range) => range,
-            None => return c.clone(),
+            None => return *c,
         };
-        let mut best_chromosome = c.clone();
+        let mut best_chromosome = *c;
         let mut best_fitness = f64::MAX;
         for i in start..end {
-            let mut candidate = c.clone();
-            
+            let mut candidate = *c;
+
             candidate.swap(i, i + 1);
 
             let current_fitness = fit(&candidate);
@@ -216,11 +225,11 @@ impl TransgeneticVector for JumpAndSwapTransposon {
         let c_len = c.len();
         if c_len <= self.k {
             return None;
-        } 
+        }
         let mut rng = rand::rng();
         let mut start = rng.random_range(0..c_len);
         let mut end = rng.random_range(0..c_len);
-        
+
         while start.abs_diff(end) < self.k {
             start = rng.random_range(0..c_len);
             end = rng.random_range(0..c_len);
@@ -231,7 +240,6 @@ impl TransgeneticVector for JumpAndSwapTransposon {
         }
 
         Some((start, end))
-
     }
 }
 
@@ -326,7 +334,9 @@ impl Cell {
     }
 
     fn evolve(&mut self, rng: &mut ThreadRng, current_it: usize, total_it: usize) {
-        let subpop = self.symbionts.evolve(rng, &self.agents.0, current_it, total_it);
+        let subpop = self
+            .symbionts
+            .evolve(rng, &self.agents.0, current_it, total_it);
 
         let mut aposteriori = subpop
             .iter()
