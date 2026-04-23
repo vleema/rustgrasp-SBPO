@@ -204,15 +204,19 @@ impl TransgeneticVector for JumpAndSwapTransposon {
         let mut best_chromosome = *c;
         let mut best_fitness = f64::MAX;
         for i in start..end {
-            let mut candidate = *c;
+            for j in start..end {
+                if i == j {
+                    continue;
+                }
 
-            candidate.swap(i, i + 1);
+                let mut candidate = *c;
+                candidate.swap(i, j);
+                let current_fitness = fit(&candidate);
 
-            let current_fitness = fit(&candidate);
-
-            if current_fitness < best_fitness {
-                best_fitness = current_fitness;
-                best_chromosome = candidate;
+                if current_fitness < best_fitness {
+                    best_fitness = current_fitness;
+                    best_chromosome = candidate;
+                }
             }
         }
 
