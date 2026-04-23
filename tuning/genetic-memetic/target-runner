@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ###############################################################################
 # This script is the command that is executed every run.
 # Check the examples in examples/
@@ -19,10 +19,9 @@
 ## Find our own location.
 # BINDIR=$(dirname "$(readlink -f "$(type -P $0 || echo $0)")")
 
-
 error() {
-    echo "`TZ=UTC date`: $0: error: $@"
-    exit 1
+	echo "$(TZ=UTC date): $0: error: $@"
+	exit 1
 }
 
 # This parses the arguments given by irace. Do not touch it!
@@ -34,14 +33,11 @@ shift 4 || error "Not enough parameters"
 CONFIG_PARAMS=$*
 # End of parsing
 
-EXE=../target/release/memetic
+EXE=../../bins/memetic/$INSTANCE_ID
 EXE_PARAMS="${CONFIG_PARAMS}"
 
-sed -i "s|\(graph_from_csv!(\"\)[^\"]*\(\")\)|\1$INSTANCE\2|" ../src/bin/memetic.rs
-cargo br 2>/dev/null >/dev/null
-
 if [ ! -x "$(command -v ${EXE})" ]; then
-    error "${EXE}: not found or not executable (pwd: $(pwd))"
+	error "${EXE}: not found or not executable (pwd: $(pwd))"
 fi
 
 STDERR=/tmp/c${CONFIG_ID}-${INSTANCE_ID}-${SEED}.stderr
