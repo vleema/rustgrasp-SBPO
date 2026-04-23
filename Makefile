@@ -4,7 +4,6 @@ export RUSTC_BOOTSTRAP=1
 all: build
 
 run: build ## Runs a given algorithm with a given instance and params, e.g. `make run-instance INSTANCE=1 ALGO=transgenetic PARAMS="100 50 42"`
-	cargo br --bin $(ALGO)
 	cargo rr --bin $(ALGO) -- $(PARAMS)
 
 build: ## Builds a given algorithm with release mode and a given instance, e.g. `make build ALGO=genetic INSTANCE=001`
