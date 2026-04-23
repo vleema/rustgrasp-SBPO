@@ -96,39 +96,29 @@ impl Plasmid {
     fn new(gu: GeneticUnit) -> Self {
         let mut rng = rand::rng();
         let mut seq = vec![];
-        let depth = rng.random_range(3..(g.len() / 6).max(4));
+        let mut stack = Vec::with_capacity(NODE_COUNT);
 
-        while seq.len() < depth {
+        while seq.len() < 2 {
             seq.clear();
+            stack.clear();
 
             let start = rng.random_range(0..gu.len());
             let mut visited = [false; NODE_COUNT];
-            let mut stack = [None; NODE_COUNT];
-            let mut top = 0;
 
-            stack[top] = Some(start);
+            stack.push(start);
 
-            while let Some(n) = stack[top] {
-                stack[top] = None;
-                top = top.saturating_sub(1);
-
-                if depth == seq.len() {
-                    break;
-                }
+            while let Some(n) = stack.pop() {
                 if visited[n] {
                     continue;
                 }
-
-                seq.push(n);
                 visited[n] = true;
+                seq.push(n);
 
                 for &adj in &gu[n] {
                     if visited[adj] {
                         continue;
                     }
-                    stack[top] = Some(adj);
-                    top += if top > 0 { 1 } else { 0 };
-                    break;
+                    stack.push(adj);
                 }
             }
         }
