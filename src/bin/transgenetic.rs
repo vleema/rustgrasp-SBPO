@@ -3,9 +3,9 @@
 use std::{array, cmp::Ordering, time::Instant};
 
 use csv_macro::graph_from_csv;
-use rand::{Rng, rngs::ThreadRng, seq::SliceRandom};
+use rand::{Rng, rngs::ThreadRng, seq::{IndexedRandom, SliceRandom}};
 
-graph_from_csv!("data/001/data.csv");
+graph_from_csv!("data/012/data.csv");
 
 /// A metric for representing the quality of a solution to the TSP problem.
 type Fit = f64;
@@ -19,7 +19,10 @@ const MAX_PSIZE: usize = 200;
 static mut FULL_POPULATION: [Chromosome; MAX_PSIZE] = [[0; NODE_COUNT]; MAX_PSIZE];
 
 /// Pool of current candidate solutions.
-struct Symbionts(&'static mut [Chromosome]);
+struct Symbionts{
+    pop: &'static mut [Chromosome], 
+    blocks: Vec<[usize; NODE_COUNT]>,
+}
 
 impl Symbionts {
     fn new(rng: &mut ThreadRng, size: usize) -> Self {
@@ -33,50 +36,81 @@ impl Symbionts {
             *i = r;
         }
 
-        Self(p)
+        Self{
+            pop: p,
+            blocks: vec![[0; NODE_COUNT]; size],
+        }
     }
 
-    fn evolve(&mut self, rng: &mut ThreadRng, tv: &[DynTransgeneticVector], current_it: usize, total_it: usize) -> &[Chromosome] {
+    fn evolve(
+        &mut self,
+        rng: &mut ThreadRng,
+        tv: &[DynTransgeneticVector],
+        current_it: usize,
+        total_it: usize,
+        is_panic: bool,
+    ) -> &[Chromosome] {
         // TODO: Improve subpopulation selection.
         let plasmid_probability = 1.0 - (current_it as f64 / total_it as f64); // Decrease plasmid probability over time.
         // let plasmid_probability = current_it as f64 / total_it as f64; // Increase plasmid probability over time.
-        let subpop = &mut self.0[..];
-        for p in &mut *subpop {
-            let wants_plasmid = rng.random_bool(plasmid_probability);
-            let candidates: Vec<&DynTransgeneticVector> = tv.iter().filter(|agent| {
-                let is_plasmid = matches!(agent, DynTransgeneticVector::Plasmid(_));
-                is_plasmid == wants_plasmid
-            }).collect();
-
-            let agent = if candidates.is_empty() {
-                &tv[rng.random_range(0..tv.len())]
+        let r1 = rng.random_range(0..NODE_COUNT);
+        let _ = rng.random_range(r1 + 1..=NODE_COUNT);
+        for (p, locks) in self.pop.iter_mut().zip(self.blocks.iter_mut()) {
+            if is_panic {
+                if rng.random_bool(0.3) {
+                    let k = rng.random_range(3..(NODE_COUNT / 4).max(4));
+                    let mutagen = DynTransgeneticVector::MutagenTransposon(MutagenTransposon::new(k));
+                    
+                    if let Some(manipulated) = mutagen.transcribed(p, locks, current_it) {
+                        *p = manipulated;
+                    }
+                }
             } else {
-                candidates[rng.random_range(0..candidates.len())]
-            };
+                let wants_plasmid = rng.random_bool(plasmid_probability);
+                let candidates: Vec<&DynTransgeneticVector> = tv
+                    .iter()
+                    .filter(|agent| {
+                        let is_plasmid = matches!(agent, DynTransgeneticVector::Plasmid(_) | DynTransgeneticVector::Virus(_));
+                        is_plasmid == wants_plasmid
+                    })
+                    .collect();
 
-            if let Some(manipulated) = agent.transcribed(p) {
-                *p = manipulated;
+                let agent = if candidates.is_empty() {
+                    &tv[rng.random_range(0..tv.len())]
+                } else {
+                    candidates[rng.random_range(0..candidates.len())]
+                };
+
+                if let Some(manipulated) = agent.transcribed(p, locks, current_it) {
+                    *p = manipulated;
+                }
             }
         }
-        subpop
+        self.pop
     }
 }
 
 trait TransgeneticVector {
     fn attack(&self, original: &Chromosome, modified: &Chromosome) -> bool;
-    fn transcribe(&self, c: &Chromosome) -> Chromosome;
-    fn block(&self, c: &Chromosome, it: usize);
+    fn transcribe(&self, c: &Chromosome, locks: &[usize; NODE_COUNT], current_it: usize) -> Chromosome;
+    fn block(&self, c: &Chromosome, locks: &mut [usize; NODE_COUNT], current_it: usize);
     fn identify(&self, c: &Chromosome) -> Option<(usize, usize)>;
 
-    fn transcribed(&self, c: &Chromosome) -> Option<Chromosome> {
-        let transcribed = self.transcribe(c);
+    fn transcribed(
+        &self, 
+        c: &Chromosome, 
+        locks: &mut [usize; NODE_COUNT], 
+        current_it: usize
+    ) -> Option<Chromosome> {
+        let transcribed = self.transcribe(c, locks, current_it);
         if self.attack(c, &transcribed) {
+            self.block(c, locks, current_it);
             return Some(transcribed);
         }
         None
     }
 }
-
+#[derive(Clone)]
 struct Plasmid {
     seq: Vec<Node>,
 }
@@ -131,7 +165,7 @@ impl TransgeneticVector for Plasmid {
         fit(original) - fit(modified) > 0.
     }
 
-    fn transcribe(&self, c: &Chromosome) -> Chromosome {
+    fn transcribe(&self, c: &Chromosome, _: &[usize; NODE_COUNT], _: usize) -> Chromosome {
         assert!(self.seq.len() <= c.len());
 
         let last = self.seq.last().unwrap();
@@ -165,7 +199,41 @@ impl TransgeneticVector for Plasmid {
         transcribed
     }
 
-    fn block(&self, _: &Chromosome, _: usize) {}
+    fn block(&self, _: &Chromosome, _: &mut [usize; NODE_COUNT], _: usize) {}
+
+    fn identify(&self, _: &Chromosome) -> Option<(usize, usize)> {
+        None
+    }
+}
+
+#[derive(Clone)]
+struct Virus {
+    plasmid: Plasmid,
+    lock_duration: usize,
+}
+
+impl Virus {
+    fn new(plasmid: Plasmid, lock_duration: usize) -> Self {
+        Self { plasmid, lock_duration }
+    }
+}
+
+impl TransgeneticVector for Virus {
+    fn attack(&self, original: &Chromosome, modified: &Chromosome) -> bool {
+        self.plasmid.attack(original, modified)
+    }
+
+    fn transcribe(&self, c: &Chromosome, locks: &[usize; NODE_COUNT], current_it: usize) -> Chromosome {
+        self.plasmid.transcribe(c, locks, current_it)
+    }
+
+    fn block(&self, _: &Chromosome , locks: &mut [usize; NODE_COUNT], current_it: usize) {
+        let expiration_time = current_it + self.lock_duration;
+        
+        for &node in &self.plasmid.seq {
+            locks[node] = expiration_time;
+        }
+    }
 
     fn identify(&self, _: &Chromosome) -> Option<(usize, usize)> {
         None
@@ -187,30 +255,40 @@ impl TransgeneticVector for JumpAndSwapTransposon {
         fit(original) - fit(modified) > 0.
     }
 
-    fn transcribe(&self, c: &Chromosome) -> Chromosome {
+    fn transcribe(&self, c: &Chromosome, locks: &[usize; NODE_COUNT], current_it: usize) -> Chromosome {
         let (start, end) = match self.identify(c) {
             Some(range) => range,
             None => return c.clone(),
         };
-        let mut best_chromosome = c.clone();
+        let candidate = c.clone();
+        let mut best_chromosome = *c;
         let mut best_fitness = f64::MAX;
         for i in start..end {
-            let mut candidate = c.clone();
-            
-            candidate.swap(i, i + 1);
+            for j in start..end {
+                if i == j {
+                    continue;
+                }
+                let node1 = candidate[i];
+                let node2 = candidate[j];
+                if locks[node1] > current_it || locks[node2] > current_it {
+                    continue;
+                }
 
-            let current_fitness = fit(&candidate);
+                let mut candidate = *c;
+                candidate.swap(i, j);
+                let current_fitness = fit(&candidate);
 
-            if current_fitness < best_fitness {
-                best_fitness = current_fitness;
-                best_chromosome = candidate;
+                if current_fitness < best_fitness {
+                    best_fitness = current_fitness;
+                    best_chromosome = candidate;
+                }
             }
         }
 
         best_chromosome
     }
 
-    fn block(&self, _: &Chromosome, _: usize) {}
+    fn block(&self, _: &Chromosome, _: &mut [usize; NODE_COUNT], _: usize) {}
 
     fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
         let c_len = c.len();
@@ -235,6 +313,85 @@ impl TransgeneticVector for JumpAndSwapTransposon {
     }
 }
 
+struct EraseAndJumpTransposon {
+    k: usize,
+}
+
+impl EraseAndJumpTransposon {
+    fn new(k: usize) -> Self {
+        Self { k }
+    }
+}
+
+impl TransgeneticVector for EraseAndJumpTransposon {
+    fn attack(&self, original: &Chromosome, modified: &Chromosome) -> bool {
+        fit(original) - fit(modified) > 0.
+    }
+
+    fn transcribe(&self, c: &Chromosome, locks: &[usize; NODE_COUNT], current_it: usize) -> Chromosome {
+        let (start, end) = match self.identify(c) {
+            Some(range) => range,
+            None => return *c,
+        };
+        let mut rng = rand::rng();
+        let mut best_chromosome = *c;
+        let mut best_fitness = f64::MAX;
+
+        let outside_indices: Vec<usize> = (0..c.len())
+            .filter(|&idx| idx < start || idx > end)
+            .collect();
+
+        if outside_indices.is_empty() {
+            return c.clone();
+        }
+        for i in start..=end {
+            let mut candidate = c.clone();
+            
+            let &j = outside_indices.choose(&mut rng).unwrap();
+
+            let node1 = candidate[i];
+            let node2 = candidate[j];
+            if locks[node1] > current_it || locks[node2] > current_it {
+                continue;
+            }
+
+            candidate.swap(i, j);
+
+            let current_fitness = fit(&candidate);
+            if current_fitness < best_fitness {
+                best_fitness = current_fitness;
+                best_chromosome = candidate;
+            }
+        }
+
+        best_chromosome
+    }
+
+    fn block(&self, _: &Chromosome, _: &mut [usize; NODE_COUNT], _: usize) {}
+
+    fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
+        let c_len = c.len();
+        if c_len <= self.k {
+            return None;
+        }
+        let mut rng = rand::rng();
+        let mut start = rng.random_range(0..c_len);
+        let mut end = rng.random_range(0..c_len);
+
+        while start.abs_diff(end) < self.k {
+            start = rng.random_range(0..c_len);
+            end = rng.random_range(0..c_len);
+        }
+
+        if start > end {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        Some((start, end))
+    }
+}
+
+
 struct MutagenTransposon {
     k: usize
 }
@@ -250,7 +407,7 @@ impl TransgeneticVector for MutagenTransposon {
         true
     }
 
-    fn transcribe(&self, c: &Chromosome) -> Chromosome {
+    fn transcribe(&self, c: &Chromosome, locks: &[usize; NODE_COUNT], current_it: usize) -> Chromosome {
         let (start, end) = match self.identify(c) {
             Some(range) => range,
             None => return c.clone(),
@@ -261,6 +418,12 @@ impl TransgeneticVector for MutagenTransposon {
         for _ in 0..self.k {
             let idx1 = rng.random_range(start..=end);
             let idx2 = rng.random_range(0..c.len());
+
+            let node1 = candidate[idx1];
+            let node2 = candidate[idx2];
+            if locks[node1] > current_it || locks[node2] > current_it {
+                continue;
+            }
         
             candidate.swap(idx1, idx2);
         }
@@ -268,7 +431,7 @@ impl TransgeneticVector for MutagenTransposon {
         candidate
     }
 
-    fn block(&self, _: &Chromosome, _: usize) {}
+    fn block(&self, _: &Chromosome, _: &mut [usize; NODE_COUNT], _: usize) {}
 
     fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
         let c_len = c.len();
@@ -295,7 +458,9 @@ impl TransgeneticVector for MutagenTransposon {
 
 enum DynTransgeneticVector {
     Plasmid(Plasmid),
+    Virus(Virus),
     JumpAndSwapTransposon(JumpAndSwapTransposon),
+    EraseAndJumpTransposon(EraseAndJumpTransposon),
     MutagenTransposon(MutagenTransposon),
 }
 
@@ -303,31 +468,39 @@ impl TransgeneticVector for DynTransgeneticVector {
     fn attack(&self, original: &Chromosome, modified: &Chromosome) -> bool {
         match self {
             Self::Plasmid(p) => p.attack(original, modified),
+            Self::Virus(v) => v.attack(original, modified),
             Self::JumpAndSwapTransposon(t) => t.attack(original, modified),
+            Self::EraseAndJumpTransposon(t) => t.attack(original, modified),
             Self::MutagenTransposon(t) => t.attack(original, modified),
         }
     }
 
-    fn transcribe(&self, c: &Chromosome) -> Chromosome {
+    fn transcribe(&self, c: &Chromosome, locks: &[usize; NODE_COUNT], current_it: usize) -> Chromosome {
         match self {
-            Self::Plasmid(p) => p.transcribe(c),
-            Self::JumpAndSwapTransposon(t) => t.transcribe(c),
-            Self::MutagenTransposon(t) => t.transcribe(c),
+            Self::Plasmid(p) => p.transcribe(c, locks, current_it),
+            Self::Virus(v) => v.transcribe(c, locks, current_it),
+            Self::JumpAndSwapTransposon(t) => t.transcribe(c, locks, current_it),
+            Self::EraseAndJumpTransposon(t) => t.transcribe(c, locks, current_it),
+            Self::MutagenTransposon(t) => t.transcribe(c, locks, current_it),
         }
     }
 
-    fn block(&self, c: &Chromosome, it: usize) {
+    fn block(&self, c: &Chromosome, locks: &mut [usize; NODE_COUNT], current_it: usize) {
         match self {
-            Self::Plasmid(p) => p.block(c, it),
-            Self::JumpAndSwapTransposon(t) => t.block(c, it),
-            Self::MutagenTransposon(t) => t.block(c, it),
+            Self::Plasmid(p) => p.block(c, locks, current_it),
+            Self::Virus(v) => v.block(c, locks, current_it),
+            Self::JumpAndSwapTransposon(t) => t.block(c, locks, current_it),
+            Self::EraseAndJumpTransposon(t) => t.block(c, locks, current_it),
+            Self::MutagenTransposon(t) => t.block(c, locks, current_it),
         }
     }
 
     fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
         match self {
             Self::Plasmid(p) => p.identify(c),
+            Self::Virus(v) => v.identify(c),
             Self::JumpAndSwapTransposon(t) => t.identify(c),
+            Self::EraseAndJumpTransposon(t) => t.identify(c),
             Self::MutagenTransposon(t) => t.identify(c),
         }
     }
@@ -358,16 +531,20 @@ impl Agents {
 
     fn new_agent(gu: GeneticUnit) -> DynTransgeneticVector {
         // TODO: Make the agent to be randomly selected.
-        // DynTransgeneticVector::Plasmid(Plasmid::new(gu))
         let mut rng = rand::rng();
         if rng.random_bool(0.5) {
-            DynTransgeneticVector::Plasmid(Plasmid::new(gu))
+            let plasmid = Plasmid::new(gu);
+            if rng.random_bool(0.5) {
+                let duration = rng.random_range(2..=5);
+                DynTransgeneticVector::Virus(Virus::new(plasmid, duration))
+            } else {
+                DynTransgeneticVector::Plasmid(plasmid)
+            }
         } else {
             let k = rng.random_range(3..(NODE_COUNT / 4).max(4));
-            if rng.random_bool(0.5) {
-                DynTransgeneticVector::JumpAndSwapTransposon(JumpAndSwapTransposon::new(k))
-            } else {
-                DynTransgeneticVector::MutagenTransposon(MutagenTransposon::new(k))
+            match rng.random_range(0..2) {
+                0 => DynTransgeneticVector::JumpAndSwapTransposon(JumpAndSwapTransposon::new(k)),
+                _ => DynTransgeneticVector::EraseAndJumpTransposon(EraseAndJumpTransposon::new(k)),
             }
         }
     }
@@ -377,6 +554,10 @@ struct Cell {
     gi: GeneticInfo,
     agents: Agents,
     symbionts: Symbionts,
+    // stagnation control
+    best_fitness: f64,
+    stagnation_counter: usize,
+    panic_duration: usize,
 }
 
 impl Cell {
@@ -389,11 +570,37 @@ impl Cell {
             gi,
             agents,
             symbionts,
+            best_fitness: f64::MAX,
+            stagnation_counter: 0,
+            panic_duration: 0,
         }
     }
 
     fn evolve(&mut self, rng: &mut ThreadRng, current_it: usize, total_it: usize) {
-        let subpop = self.symbionts.evolve(rng, &self.agents.0, current_it, total_it);
+        let is_panic = self.panic_duration > 0;
+        let subpop = self
+            .symbionts
+            .evolve(rng, &self.agents.0, current_it, total_it, is_panic);
+
+        let current_best = subpop
+            .iter()
+            .map(|c| fit(c.as_slice()))
+            .min_by(|a, b| a.total_cmp(b))
+            .unwrap_or(f64::MAX);
+
+        if current_best < self.best_fitness {
+            self.best_fitness = current_best;
+            self.stagnation_counter = 0;
+        } else {
+            self.stagnation_counter += 1;
+        }
+
+        if self.panic_duration > 0 {
+            self.panic_duration -= 1;
+        } else if self.stagnation_counter >= 25 {
+            self.panic_duration = 1; 
+            self.stagnation_counter = 0;
+        }
 
         let mut aposteriori = subpop
             .iter()
@@ -493,7 +700,7 @@ fn main() {
     println!(
         "{} {}",
         cell.symbionts
-            .0
+            .pop
             .iter()
             .map(|x| fit(x.as_slice()))
             .min_by(|x, y| x.total_cmp(y))
