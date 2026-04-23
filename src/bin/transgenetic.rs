@@ -245,9 +245,68 @@ impl TransgeneticVector for JumpAndSwapTransposon {
     }
 }
 
+struct MutagenTransposon {
+    k: usize
+}
+
+impl MutagenTransposon {
+    fn new(k: usize) -> Self {
+        Self { k }
+    }
+}
+
+impl TransgeneticVector for MutagenTransposon {
+    fn attack(&self, _: &Chromosome, _: &Chromosome) -> bool {
+        true
+    }
+
+    fn transcribe(&self, c: &Chromosome) -> Chromosome {
+        let (start, end) = match self.identify(c) {
+            Some(range) => range,
+            None => return c.clone(),
+        };
+        let mut candidate = c.clone();
+        let mut rng = rand::rng();
+
+        for _ in 0..self.k {
+            let idx1 = rng.random_range(start..=end);
+            let idx2 = rng.random_range(0..c.len());
+        
+            candidate.swap(idx1, idx2);
+        }
+
+        candidate
+    }
+
+    fn block(&self, _: &Chromosome, _: usize) {}
+
+    fn identify(&self, c: &Chromosome) -> Option<(usize, usize)> {
+        let c_len = c.len();
+        if c_len <= self.k {
+            return None;
+        } 
+        let mut rng = rand::rng();
+        let mut start = rng.random_range(0..c_len);
+        let mut end = rng.random_range(0..c_len);
+        
+        while start.abs_diff(end) < self.k {
+            start = rng.random_range(0..c_len);
+            end = rng.random_range(0..c_len);
+        }
+
+        if start > end {
+            std::mem::swap(&mut start, &mut end);
+        }
+
+        Some((start, end))
+
+    }
+}
+
 enum DynTransgeneticVector {
     Plasmid(Plasmid),
     JumpAndSwapTransposon(JumpAndSwapTransposon),
+    MutagenTransposon(MutagenTransposon),
 }
 
 impl TransgeneticVector for DynTransgeneticVector {
@@ -255,6 +314,7 @@ impl TransgeneticVector for DynTransgeneticVector {
         match self {
             Self::Plasmid(p) => p.attack(original, modified),
             Self::JumpAndSwapTransposon(t) => t.attack(original, modified),
+            Self::MutagenTransposon(t) => t.attack(original, modified),
         }
     }
 
@@ -262,6 +322,7 @@ impl TransgeneticVector for DynTransgeneticVector {
         match self {
             Self::Plasmid(p) => p.transcribe(c),
             Self::JumpAndSwapTransposon(t) => t.transcribe(c),
+            Self::MutagenTransposon(t) => t.transcribe(c),
         }
     }
 
@@ -269,6 +330,7 @@ impl TransgeneticVector for DynTransgeneticVector {
         match self {
             Self::Plasmid(p) => p.block(c, it),
             Self::JumpAndSwapTransposon(t) => t.block(c, it),
+            Self::MutagenTransposon(t) => t.block(c, it),
         }
     }
 
@@ -276,6 +338,7 @@ impl TransgeneticVector for DynTransgeneticVector {
         match self {
             Self::Plasmid(p) => p.identify(c),
             Self::JumpAndSwapTransposon(t) => t.identify(c),
+            Self::MutagenTransposon(t) => t.identify(c),
         }
     }
 }
@@ -319,7 +382,11 @@ impl Agents {
             DynTransgeneticVector::Plasmid(Plasmid::new(gu))
         } else {
             let k = rng.random_range(3..(NODE_COUNT / 4).max(4));
-            DynTransgeneticVector::JumpAndSwapTransposon(JumpAndSwapTransposon::new(k))
+            if rng.random_bool(0.5) {
+                DynTransgeneticVector::JumpAndSwapTransposon(JumpAndSwapTransposon::new(k))
+            } else {
+                DynTransgeneticVector::MutagenTransposon(MutagenTransposon::new(k))
+            }
         }
     }
 }
