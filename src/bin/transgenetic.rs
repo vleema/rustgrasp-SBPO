@@ -46,7 +46,9 @@ impl Symbionts {
         // TODO: Improve subpopulation selection.
         let plasmid_probability = 1.0 - (current_it as f64 / total_it as f64); // Decrease plasmid probability over time.
         // let plasmid_probability = current_it as f64 / total_it as f64; // Increase plasmid probability over time.
-        let subpop = &mut self.0[..];
+        let r1 = rng.random_range(0..NODE_COUNT);
+        let r2 = rng.random_range(r1 + 1..=NODE_COUNT);
+        let subpop = &mut self.0[r1..r2];
         for p in &mut *subpop {
             let wants_plasmid = rng.random_bool(plasmid_probability);
             let candidates: Vec<&DynTransgeneticVector> = tv
@@ -350,10 +352,11 @@ impl Cell {
             .symbionts
             .evolve(rng, &self.agents.0, current_it, total_it);
 
+        // TODO: Increase the inserted aposteriori information when the iteration starts to converge.
         let mut aposteriori = subpop
             .iter()
             .copied()
-            .take(rng.random_range(10..subpop.len()))
+            .take(rng.random_range(0..subpop.len()))
             .collect::<Vec<_>>();
 
         aposteriori.sort_by(|c1, c2| fit(c1.as_slice()).total_cmp(&fit(c2.as_slice())));
