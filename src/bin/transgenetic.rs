@@ -18,7 +18,7 @@ type Fit = f64;
 type Chromosome = [Node; NODE_COUNT];
 
 /// The maximum size that the population can have.
-const MAX_PSIZE: usize = 300;
+const MAX_PSIZE: usize = 500;
 
 static mut FULL_POPULATION: [Chromosome; MAX_PSIZE] = [[0; NODE_COUNT]; MAX_PSIZE];
 
