@@ -1,12 +1,6 @@
 #![feature(slice_swap_unchecked)]
 
-use std::{
-    array,
-    cmp::{Ordering, Reverse},
-    collections::{BinaryHeap, HashMap},
-    ops::Add,
-    time::Instant,
-};
+use std::{array, cmp::Ordering, collections::VecDeque, time::Instant};
 
 use csv_macro::graph_from_csv;
 use rand::{
@@ -554,7 +548,7 @@ impl GeneticInfo {
         gi.push(mintree);
 
         for i in 0..NODE_COUNT {
-            gi.push(djikstra_tree(i));
+            gi.push(bfs_tree(i));
         }
 
         Self(gi)
@@ -666,68 +660,24 @@ impl Cell {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-struct Float(f64);
-
-impl From<f64> for Float {
-    fn from(value: f64) -> Self {
-        Self(value)
-    }
-}
-
-impl Add for Float {
-    type Output = Float;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Float(self.0.add(rhs.0))
-    }
-}
-
-impl Eq for Float {}
-
-impl PartialOrd for Float {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Float {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.total_cmp(&other.0)
-    }
-}
-
-fn djikstra_tree(start: Node) -> Vec<Vec<Node>> {
-    let mut pq = BinaryHeap::with_capacity(NODE_COUNT);
-    let mut parents = HashMap::with_capacity(NODE_COUNT);
-    let mut dist = [Float(f64::MAX); NODE_COUNT];
-
-    pq.push((Reverse(Float(0.)), start));
-    dist[start] = Float(0.0);
-
-    while let Some((Reverse(w), n)) = pq.pop() {
-        if w > dist[n] {
-            continue;
-        }
-
-        for adj in 0..NODE_COUNT {
-            if adj == n {
-                continue;
-            }
-            if w + g[n][adj].into() < dist[adj] {
-                dist[adj] = w + g[n][adj].into();
-                pq.push((Reverse(dist[adj]), adj));
-                parents.insert(adj, n);
-            }
-        }
-    }
-
+fn bfs_tree(start: Node) -> Vec<Vec<Node>> {
     let mut edges = (0..NODE_COUNT)
         .map(|_| Vec::with_capacity(NODE_COUNT))
         .collect::<Vec<_>>();
+    let mut queue = VecDeque::with_capacity(NODE_COUNT);
+    let mut visited = [false; NODE_COUNT];
 
-    for (c, p) in parents {
-        edges[p].push(c);
+    queue.push_back(start);
+    visited[start] = true;
+
+    while let Some(n) = queue.pop_front() {
+        for adj in 0..NODE_COUNT {
+            if !visited[adj] {
+                queue.push_back(adj);
+                edges[n].push(adj);
+                visited[n] = true;
+            }
+        }
     }
 
     edges
