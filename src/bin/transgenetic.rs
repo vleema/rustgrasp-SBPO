@@ -1,6 +1,6 @@
 #![feature(slice_swap_unchecked)]
 
-use std::{array, cmp::Ordering, collections::VecDeque, time::Instant};
+use std::{array, cmp::Ordering, time::Instant};
 
 use csv_macro::graph_from_csv;
 use rand::{
@@ -552,16 +552,8 @@ struct GeneticInfo(Vec<GeneticUnit>);
 
 impl GeneticInfo {
     fn new() -> Self {
-        let mut gi = Vec::with_capacity(1 + NODE_COUNT);
-
         let mintree = minimum_spanning_tree();
-        gi.push(mintree);
-
-        for i in 0..NODE_COUNT {
-            gi.push(bfs_tree(i));
-        }
-
-        Self(gi)
+        Self(vec![mintree])
     }
 }
 
@@ -668,29 +660,6 @@ impl Cell {
             edges
         }));
     }
-}
-
-fn bfs_tree(start: Node) -> Vec<Vec<Node>> {
-    let mut edges = (0..NODE_COUNT)
-        .map(|_| Vec::with_capacity(NODE_COUNT))
-        .collect::<Vec<_>>();
-    let mut queue = VecDeque::with_capacity(NODE_COUNT);
-    let mut visited = [false; NODE_COUNT];
-
-    queue.push_back(start);
-    visited[start] = true;
-
-    while let Some(n) = queue.pop_front() {
-        for adj in 0..NODE_COUNT {
-            if !visited[adj] {
-                queue.push_back(adj);
-                edges[n].push(adj);
-                visited[n] = true;
-            }
-        }
-    }
-
-    edges
 }
 
 fn minimum_spanning_tree() -> Vec<Vec<Node>> {
