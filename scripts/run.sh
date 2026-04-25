@@ -7,6 +7,11 @@ TEMP_DIR=/tmp/grasp
 ALGORITHM=${1:-transgenetic}
 if [ -n "$1" ]; then shift 1; fi
 
+if [ "$ALGORITHM" != genetic ] && [ "$ALGORITHM" != transgenetic ] && [ "$ALGORITHM" != memetic ]; then
+    echo "invalid algorithm '$ALGORITHM', expected one of ['genetic', 'transgenetic', 'memetic']"
+    exit 1
+fi
+
 INSTANCE=${1:-1}
 if [ -n "$1" ]; then shift 1; fi
 
