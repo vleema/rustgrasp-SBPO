@@ -14,7 +14,7 @@ type Fit = f64;
 type Chromosome = [Node; NODE_COUNT];
 
 /// The maximum size that the population can have.
-const MAX_PSIZE: usize = 200;
+const MAX_PSIZE: usize = 500;
 
 static mut FULL_POPULATION: [Chromosome; MAX_PSIZE] = [[0; NODE_COUNT]; MAX_PSIZE];
 
@@ -57,12 +57,27 @@ impl Symbionts {
         let _ = rng.random_range(r1 + 1..=NODE_COUNT);
         for (p, locks) in self.pop.iter_mut().zip(self.blocks.iter_mut()) {
             if is_panic {
-                if rng.random_bool(0.3) {
+                if rng.random_bool(0.36) {
                     let k = rng.random_range(3..(NODE_COUNT / 4).max(4));
                     let mutagen = DynTransgeneticVector::MutagenTransposon(MutagenTransposon::new(k));
                     
                     if let Some(manipulated) = mutagen.transcribed(p, locks, current_it) {
                         *p = manipulated;
+                    }
+                } else {
+                    if rng.random_bool(0.3){
+                        let k = rng.random_range(3..(NODE_COUNT / 4).max(4));
+                        let erase_and_jump = DynTransgeneticVector::EraseAndJumpTransposon(EraseAndJumpTransposon::new(k));
+                    
+                        if let Some(manipulated) = erase_and_jump.transcribed(p, locks, current_it) {
+                            *p = manipulated;
+                        }
+                    } else {
+                        let jump_and_swap = DynTransgeneticVector::JumpAndSwapTransposon(JumpAndSwapTransposon::new(5));
+                    
+                    if let Some(manipulated) = jump_and_swap.transcribed(p, locks, current_it) {
+                        *p = manipulated;
+                    }
                     }
                 }
             } else {

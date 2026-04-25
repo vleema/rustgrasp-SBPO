@@ -1,0 +1,6 @@
+Min: 1223
+Avg cost: 1252.043635764861
+Standard deviation (cost): 20.38278063618483
+Avg time: 0.11547420691750371s
+Standard deviation (time): 0.018550026068163587
+Count: 6073
